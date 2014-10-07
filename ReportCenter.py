@@ -11,6 +11,21 @@ sqltbl_forecast = "fcp"
 
 OPTIONS_ID = wx.NewId()
 
+class SubFrame(wx.Frame):
+    def __init__(self,title):
+        wx.Frame.__init__(self,parent=None,title=title,size=(200,300))
+        self.pnl_Msg = wx.Panel(self)
+        self.hbx_Msg = wx.BoxSizer(wx.HORIZONTAL)
+        self.size = wx.StaticText(self.pnl_Msg,-1,"0")
+        self.update = wx.StaticText(self.pnl_Msg,-1,"0")
+        self.hbx_Msg.Add(self.size)
+        self.hbx_Msg.Add(self.update)
+
+        self.vbx_Msg = wx.BoxSizer(wx.VERTICAL)
+        self.vbx_Msg.Add(self.hbx_Msg,0,flag=wx.CENTER)
+        self.pnl_Msg.SetSizer(self.vbx_Msg)
+        #self.vbx_Msg.Fit(self)
+
 class Frame(wx.Frame):
     def __init__(self,title):
         wx.Frame.__init__(self,parent=None,title=title, id=-1,size=(300,300))
@@ -35,41 +50,61 @@ class Frame(wx.Frame):
 
 
     def ProcessBookings(self, event):
+        self.ProgressFrame = SubFrame(title="Bookings Refresh")
+        self.ProgressFrame.Show()
         logging.error("processing bookings...")
-        #try:
-        self.ImportCSV(pth_book,sqltbl_book)
-        #except Exception as e:
-        #    logging.error("Error: " + str(e))
+        try:
+            self.ImportCSV(pth_book,sqltbl_book)
+        except Exception as e:
+            logging.error("Error: " + str(e))
 
-        #try:
-        self.ImportCSV(pth_forecast,sqltbl_forecast)
-        #except Exception as e:
-        #    logging.error("Error: " + str(e))
+        try:
+            self.ImportCSV(pth_forecast,sqltbl_forecast)
+        except Exception as e:
+            logging.error("Error: " + str(e))
+        self.ProgressFrame.Destroy()
 
             
 
     def ImportCSV(self,pth,table):
         logging.error("Importing CSV at '" + pth + "' to table '" + table + "'")
         with open(pth,'rb') as csvfile:
-            reader = csv.reader(csvfile,delimiter=',')
-            columns = next(reader)
+            data = csv.reader(csvfile,delimiter=',')
+            columns = data.next()
+            print type(data)
+            # columns = ["ha","yo","what","no","hur dur"]
+            # total = data
+            # total = str(len(list(total)))
+            # self.ProgressFrame.size.SetValue(total)
             entries = []
-            total = 0
-    
-            for entry in reader:
+            i = 0
+
+            for entry in data:
                 row = self.Entry()
-                total += 1
                 for i in range(len(columns)):
                     setattr(row,columns[i],entry[i])
+                # logging.error('appending row')
                 entries.append(row)
-                if len(entries) == 10:
+                i += 1
+                # self.ProgressFrame.update.SetValue(str(i))
+                if len(entries) == 10000:
+                    logging.error('loading SQL with 10000 entries')
+                    print vars(entries[0])
                     self.LoadSQL(entries,table)
                     entries = []
-    
-            print "done adding " + str(total) + " entries"
-    
+            print columns
+            print data
+            print i
+            # print "done adding " + total + " entries"
+        csvfile.close()
+
     def LoadSQL(self,entries,table):
-        #con = _mysql.connect()
+        con = _mysql.connect('localhost')
+        cursor = con.cursor()
+        cursor.execute("SELECT VERSION()")
+        data = cursor.fetchone()
+        logging.error(data)
+        con.close()
 #
         ##clean table
         #cmd = "DELETE * FROM " + table
@@ -78,16 +113,16 @@ class Frame(wx.Frame):
         #add entries to table
         cmd = "INSERT INTO " + table + "("
         sample = entries[0]
-        try:
-            attributes = [a for a in dir(sample) if not a.startswith('__') and not callable(getattr(sample,a))]
-        except Exception as e:
-            logging.error("haha didnt work")
+        attributes = [a for a in dir(sample) if not a.startswith('__') and not callable(getattr(sample,a))]
+
+        #extract individual attributes to put in sql statement
         for col in attributes:
             cmd += col
             if col != attributes[-1]:
                 cmd += ","
-
         cmd += ") VALUES "
+
+        #create SQL row statement for each object
         for entry in entries:
             cmd += "("
             for col in attributes:
@@ -99,13 +134,12 @@ class Frame(wx.Frame):
                     if entry != entries[-1]:
                         cmd += ','
 
-        logging.error("YOUR SQL COMMAND: ")
-        logging.error(cmd)
+        #logging.error("YOUR SQL COMMAND: ")
+        #logging.error(cmd)
 
-        #con.query("SELECT VERSION()")
-        #result = con.use_result()
-#
-        #print result
+        #execute SQL cmd and close connection
+        #con.execute(cmd)
+        #con.close()
 
     def OnExit(self, event):
         self.Destroy()
@@ -123,4 +157,3 @@ if __name__ == '__main__':
     app.main = Frame("Report Center")
     app.main.Show()
     app.MainLoop()
-    #ImportCSV(pth_book,"book")
