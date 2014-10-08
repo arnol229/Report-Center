@@ -11,20 +11,51 @@ sqltbl_forecast = "fcp"
 
 OPTIONS_ID = wx.NewId()
 
-class SubFrame(wx.Frame):
+class ProgressFrame(wx.Frame):
     def __init__(self,title):
-        wx.Frame.__init__(self,parent=None,title=title,size=(200,300))
-        self.pnl_Msg = wx.Panel(self)
-        self.hbx_Msg = wx.BoxSizer(wx.HORIZONTAL)
-        self.size = wx.StaticText(self.pnl_Msg,-1,"0")
-        self.update = wx.StaticText(self.pnl_Msg,-1,"0")
-        self.hbx_Msg.Add(self.size)
-        self.hbx_Msg.Add(self.update)
+        wx.Frame.__init__(self,parent=None,title=title,size=(400,400))
+        #self.pnl_main = wx.Panel(self)
+        self.pnl_current = wx.Panel(self)
+        self.pnl_size = wx.Panel(self)
+        self.pnl_msg = wx.Panel(self)
 
-        self.vbx_Msg = wx.BoxSizer(wx.VERTICAL)
-        self.vbx_Msg.Add(self.hbx_Msg,0,flag=wx.CENTER)
-        self.pnl_Msg.SetSizer(self.vbx_Msg)
-        #self.vbx_Msg.Fit(self)
+        self.pnl_current.SetBackgroundColour("RED")
+        self.pnl_msg.SetBackgroundColour("BLUE")
+        self.pnl_size.SetBackgroundColour("GREEN")
+
+        self.vbx_main = wx.BoxSizer(wx.VERTICAL)
+        self.hbx_progress = wx.BoxSizer(wx.HORIZONTAL)
+        self.hbx_msg = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.current = wx.StaticText(self.pnl_current,-1,"0")
+        self.size = wx.StaticText(self.pnl_size,-1,"1")
+        self.msg = wx.StaticText(self.pnl_msg,-1,label="Working...")
+
+        self.vbx_main.Add(self.hbx_progress)
+        self.vbx_main.Add(self.hbx_msg)
+        self.hbx_progress.Add(self.pnl_current)
+        self.hbx_progress.Add(self.pnl_size)
+        self.hbx_msg.Add(self.pnl_msg)
+
+        self.SetSizer(self.vbx_main,wx.EXPAND)
+        self.SetAutoLayout(True)
+        self.vbx_main.Fit(self)
+
+    def ErrorExit(self):
+        self.Destroy()
+    
+    def ShowError(self,error):
+        self.msg.SetLabel(str(error))
+        # self.Layout()
+        
+        # self.pnl_error = wx.Panel(self)
+        # self.btn_error = wx.Button(self.pnl_error,-1,"Ok")
+        # self.hbx_error = wx.BoxSizer(wx.HORIZONTAL)
+        # self.hbx_error.Add(self.btn_error)
+        # self.error = wx.StaticText(self.pnl_error,-1,str(error))
+        # self.Bind(wx.EVT_BUTTON, self.Destroy(), self.btn_error)
+    def complete(self):
+        self.Destroy()
 
 class Frame(wx.Frame):
     def __init__(self,title):
@@ -41,70 +72,87 @@ class Frame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnExit, self.m_Fexit)
     
         ## Create Main Panel
-        self.pnl_Main = wx.Panel(self)
-        self.bx_Main = wx.BoxSizer(wx.HORIZONTAL)
-        self.btn_bookings = wx.Button(self.pnl_Main,-1,'Bookings')
-        self.bx_Main.Add(self.btn_bookings)
-        self.Bind(wx.EVT_BUTTON, self.ProcessBookings)
-        self.pnl_Main.SetSizer(self.bx_Main)
+        self.pnl_main = wx.Panel(self)
+        self.bx_main = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_bookings = wx.Button(self.pnl_main,-1,'Bookings')
+        self.bx_main.Add(self.btn_bookings)
+        self.Bind(wx.EVT_BUTTON, self.ProcessBookings, self.btn_bookings)
+        self.btn_clarity = wx.Button(self.pnl_main,-1,'Clarity')
+        self.Bind(wx.EVT_BUTTON, self.ProcessClarity, self.btn_clarity)
+        self.bx_main.Add(self.btn_clarity)
+        self.pnl_main.SetSizer(self.bx_main)
 
+    def ProcessClarity(self, event):
+        pass
 
     def ProcessBookings(self, event):
-        self.ProgressFrame = SubFrame(title="Bookings Refresh")
-        self.ProgressFrame.Show()
+        self.StatusFrame = ProgressFrame(title="Bookings Refresh")
+        self.StatusFrame.Show()
         logging.error("processing bookings...")
         try:
             self.ImportCSV(pth_book,sqltbl_book)
         except Exception as e:
-            logging.error("Error: " + str(e))
+            self.StatusFrame.ShowError(e)
 
         try:
             self.ImportCSV(pth_forecast,sqltbl_forecast)
         except Exception as e:
             logging.error("Error: " + str(e))
-        self.ProgressFrame.Destroy()
+        self.StatusFrame.complete()
 
             
 
     def ImportCSV(self,pth,table):
         logging.error("Importing CSV at '" + pth + "' to table '" + table + "'")
+        #Get the total number of rows to show progress.
+        with open(pth,'rb') as csvfile:
+            data = csv.reader(csvfile,delimiter=',')
+            rows = list(data)
+            total = len(rows)
+            self.StatusFrame.size.SetLabel(str(total))
+            print str(total)
+
         with open(pth,'rb') as csvfile:
             data = csv.reader(csvfile,delimiter=',')
             columns = data.next()
-            print type(data)
-            # columns = ["ha","yo","what","no","hur dur"]
-            # total = data
-            # total = str(len(list(total)))
-            # self.ProgressFrame.size.SetValue(total)
+
+            ### why does getting the total rows below cause data to become empty?
+            ### is it iterating through and 'using up' the csv?
+            # rows = list(data)
+            # total = len(rows)
+            # self.StatusFrame.size.SetLabel(str(total))
+            # print str(total)
+
             entries = []
             i = 0
 
             for entry in data:
                 row = self.Entry()
-                for i in range(len(columns)):
-                    setattr(row,columns[i],entry[i])
+                for pos in range(len(columns)):
+                    setattr(row,columns[pos],entry[pos])
                 # logging.error('appending row')
                 entries.append(row)
                 i += 1
-                # self.ProgressFrame.update.SetValue(str(i))
+                self.StatusFrame.current.SetLabel(str(i))
                 if len(entries) == 10000:
                     logging.error('loading SQL with 10000 entries')
-                    print vars(entries[0])
+                    # print vars(entries[0])
                     self.LoadSQL(entries,table)
                     entries = []
+            logging.error('loading SQL with the remaining ' + str(len(entries)) + ' entries.')
+            self.LoadSQL(entries,table)
             print columns
             print data
             print i
             # print "done adding " + total + " entries"
-        csvfile.close()
 
     def LoadSQL(self,entries,table):
-        con = _mysql.connect('localhost')
-        cursor = con.cursor()
-        cursor.execute("SELECT VERSION()")
-        data = cursor.fetchone()
-        logging.error(data)
-        con.close()
+        # con = _mysql.connect('localhost')
+        # cursor = con.cursor()
+        # cursor.execute("SELECT VERSION()")
+        # data = cursor.fetchone()
+        # logging.error(data)
+        # con.close()
 #
         ##clean table
         #cmd = "DELETE * FROM " + table
