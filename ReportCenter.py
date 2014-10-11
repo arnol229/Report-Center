@@ -6,10 +6,15 @@ import _mysql
 pth_book = "C:\Users\deryarno\Desktop\Reports\data sources\Bookings.csv"
 pth_forecast = "C:\Users\deryarno\Desktop\Reports\data sources\Forecast Bookings.csv"
 
+sqlsvr_host = 'sjc-dbdl-mysql3'
+sqlsvr_user = 'iotssg'
+sqlsvr_pwd = 'iotssg'
+
 sqltbl_book = "book"
 sqltbl_forecast = "fcp"
 
 OPTIONS_ID = wx.NewId()
+CONNECT_ID = wx.NewId()
 
 class ProgressFrame(wx.Frame):
     def __init__(self,title):
@@ -60,32 +65,57 @@ class ProgressFrame(wx.Frame):
 class Frame(wx.Frame):
     def __init__(self,title):
         wx.Frame.__init__(self,parent=None,title=title, id=-1,size=(300,300))
-    
+
+        self.DBconnection = None
         ## Create Menu
         self.menubar = wx.MenuBar()
         self.menu = wx.Menu()
         self.m_Fexit = self.menu.Append(wx.ID_EXIT, 'Exit', "Exit")
         self.m_Foptions = self.menu.Append(OPTIONS_ID, 'Options','Edit Options')
+        self.m_Fconnect = self.menu.Append(CONNECT_ID,'Connect to DB','Enable connection to database')
         self.menubar.Append(self.menu, '&File')
         self.SetMenuBar(self.menubar)
         self.Bind(wx.EVT_MENU, self.OnOptions, self.m_Foptions)
         self.Bind(wx.EVT_MENU, self.OnExit, self.m_Fexit)
+        self.Bind(wx.EVT_MENU,self.DataBaseConnection,self.m_Fconnect)
     
         ## Create Main Panel
         self.pnl_main = wx.Panel(self)
         self.bx_main = wx.BoxSizer(wx.HORIZONTAL)
+
         self.btn_bookings = wx.Button(self.pnl_main,-1,'Bookings')
         self.bx_main.Add(self.btn_bookings)
         self.Bind(wx.EVT_BUTTON, self.ProcessBookings, self.btn_bookings)
+
+        self.btn_connect = wx.ToggleButton(self.pnl_main, 1, 'Connect to DB')
+        self.bx_main.Add(self.btn_connect)
+        self.Bind(wx.EVT_TOGGLEBUTTON, self.DataBaseConnection, self.btn_connect)
+
         self.btn_clarity = wx.Button(self.pnl_main,-1,'Clarity')
-        self.Bind(wx.EVT_BUTTON, self.ProcessClarity, self.btn_clarity)
         self.bx_main.Add(self.btn_clarity)
+        self.Bind(wx.EVT_BUTTON, self.ProcessClarity, self.btn_clarity)
+
         self.pnl_main.SetSizer(self.bx_main)
+
+    def DataBaseConnection(self,event):
+        if self.btn_connect.GetValue() == True:
+            logging.error('Connecting...')
+            try:
+                self.DBconnection = _mysql.connect(sqlsvr_host,sqlsvr_user,sqlsvr_pwd,port=3306)
+                logging.error('Connected!')
+            except Exception as e:
+                logging.error('Cant connect to DB')
+        elif self.btn_connect.GetValue() == False:
+            logging.error('Closing connection...')
+            self.DBconnection.close()
 
     def ProcessClarity(self, event):
         pass
 
     def ProcessBookings(self, event):
+        if self.DBconnection == None:
+            logging.error('no connection to DB')
+            return
         self.StatusFrame = ProgressFrame(title="Bookings Refresh")
         self.StatusFrame.Show()
         logging.error("processing bookings...")
@@ -147,12 +177,15 @@ class Frame(wx.Frame):
             # print "done adding " + total + " entries"
 
     def LoadSQL(self,entries,table):
-        # con = _mysql.connect('localhost')
-        # cursor = con.cursor()
-        # cursor.execute("SELECT VERSION()")
-        # data = cursor.fetchone()
-        # logging.error(data)
-        # con.close()
+        #try:
+        #    con = _mysql.connect('sjc-dbdl-mysql3','iotssg','iotssg',port=3306)
+        #    c = con.cursor()
+        #    error.logging(c.execute("SELECT VERSION()"))
+        #    #data = cursor.fetchone()
+        #    #logging.error(data)
+        #    con.close()
+        #except Exception as e:
+        #    logging.error("error!!! " + str(e))
 #
         ##clean table
         #cmd = "DELETE * FROM " + table
