@@ -1,240 +1,291 @@
-import wx
-import csv
-import logging
-import _mysql
+# -*- coding: utf-8 -*-
 
-pth_book = "C:\Users\deryarno\Desktop\Reports\data sources\Bookings.csv"
-pth_forecast = "C:\Users\deryarno\Desktop\Reports\data sources\Forecast Bookings.csv"
-
-sqlsvr_host = 'sjc-dbdl-mysql3'
-sqlsvr_user = 'iotssg'
-sqlsvr_pwd = 'iotssg'
-
-sqltbl_book = "book"
-sqltbl_forecast = "fcp"
-
-OPTIONS_ID = wx.NewId()
-CONNECT_ID = wx.NewId()
-
-class ProgressFrame(wx.Frame):
-    def __init__(self,title):
-        wx.Frame.__init__(self,parent=None,title=title,size=(400,400))
-        #self.pnl_main = wx.Panel(self)
-        self.pnl_current = wx.Panel(self)
-        self.pnl_size = wx.Panel(self)
-        self.pnl_msg = wx.Panel(self)
-
-        self.pnl_current.SetBackgroundColour("RED")
-        self.pnl_msg.SetBackgroundColour("BLUE")
-        self.pnl_size.SetBackgroundColour("GREEN")
-
-        self.vbx_main = wx.BoxSizer(wx.VERTICAL)
-        self.hbx_progress = wx.BoxSizer(wx.HORIZONTAL)
-        self.hbx_msg = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.current = wx.StaticText(self.pnl_current,-1,"0")
-        self.size = wx.StaticText(self.pnl_size,-1,"1")
-        self.msg = wx.StaticText(self.pnl_msg,-1,label="Working...")
-
-        self.vbx_main.Add(self.hbx_progress)
-        self.vbx_main.Add(self.hbx_msg)
-        self.hbx_progress.Add(self.pnl_current)
-        self.hbx_progress.Add(self.pnl_size)
-        self.hbx_msg.Add(self.pnl_msg)
-
-        self.SetSizer(self.vbx_main,wx.EXPAND)
-        self.SetAutoLayout(True)
-        self.vbx_main.Fit(self)
-
-    def ErrorExit(self):
-        self.Destroy()
-    
-    def ShowError(self,error):
-        self.msg.SetLabel(str(error))
-        # self.Layout()
-        
-        # self.pnl_error = wx.Panel(self)
-        # self.btn_error = wx.Button(self.pnl_error,-1,"Ok")
-        # self.hbx_error = wx.BoxSizer(wx.HORIZONTAL)
-        # self.hbx_error.Add(self.btn_error)
-        # self.error = wx.StaticText(self.pnl_error,-1,str(error))
-        # self.Bind(wx.EVT_BUTTON, self.Destroy(), self.btn_error)
-    def complete(self):
-        self.Destroy()
-
-class Frame(wx.Frame):
-    def __init__(self,title):
-        wx.Frame.__init__(self,parent=None,title=title, id=-1,size=(300,300))
-
-        self.DBconnection = None
-        ## Create Menu
-        self.menubar = wx.MenuBar()
-        self.menu = wx.Menu()
-        self.m_Fexit = self.menu.Append(wx.ID_EXIT, 'Exit', "Exit")
-        self.m_Foptions = self.menu.Append(OPTIONS_ID, 'Options','Edit Options')
-        self.m_Fconnect = self.menu.Append(CONNECT_ID,'Connect to DB','Enable connection to database')
-        self.menubar.Append(self.menu, '&File')
-        self.SetMenuBar(self.menubar)
-        self.Bind(wx.EVT_MENU, self.OnOptions, self.m_Foptions)
-        self.Bind(wx.EVT_MENU, self.OnExit, self.m_Fexit)
-        self.Bind(wx.EVT_MENU,self.DataBaseConnection,self.m_Fconnect)
-    
-        ## Create Main Panel
-        self.pnl_main = wx.Panel(self)
-        self.bx_main = wx.BoxSizer(wx.HORIZONTAL)
-
-        self.btn_bookings = wx.Button(self.pnl_main,-1,'Bookings')
-        self.bx_main.Add(self.btn_bookings)
-        self.Bind(wx.EVT_BUTTON, self.ProcessBookings, self.btn_bookings)
-
-        self.btn_connect = wx.ToggleButton(self.pnl_main, 1, 'Connect to DB')
-        self.bx_main.Add(self.btn_connect)
-        self.Bind(wx.EVT_TOGGLEBUTTON, self.DataBaseConnection, self.btn_connect)
-
-        self.btn_clarity = wx.Button(self.pnl_main,-1,'Clarity')
-        self.bx_main.Add(self.btn_clarity)
-        self.Bind(wx.EVT_BUTTON, self.ProcessClarity, self.btn_clarity)
-
-        self.pnl_main.SetSizer(self.bx_main)
-
-    def DataBaseConnection(self,event):
-        if self.btn_connect.GetValue() == True:
-            logging.error('Connecting...')
-            try:
-                self.DBconnection = _mysql.connect(sqlsvr_host,sqlsvr_user,sqlsvr_pwd,port=3306)
-                logging.error('Connected!')
-            except Exception as e:
-                logging.error('Cant connect to DB')
-        elif self.btn_connect.GetValue() == False:
-            logging.error('Closing connection...')
-            self.DBconnection.close()
-
-    def ProcessClarity(self, event):
-        pass
-
-    def ProcessBookings(self, event):
-        if self.DBconnection == None:
-            logging.error('no connection to DB')
-            return
-        self.StatusFrame = ProgressFrame(title="Bookings Refresh")
-        self.StatusFrame.Show()
-        logging.error("processing bookings...")
-        try:
-            self.ImportCSV(pth_book,sqltbl_book)
-        except Exception as e:
-            self.StatusFrame.ShowError(e)
-
-        try:
-            self.ImportCSV(pth_forecast,sqltbl_forecast)
-        except Exception as e:
-            logging.error("Error: " + str(e))
-        self.StatusFrame.complete()
-
-            
-
-    def ImportCSV(self,pth,table):
-        logging.error("Importing CSV at '" + pth + "' to table '" + table + "'")
-        #Get the total number of rows to show progress.
-        with open(pth,'rb') as csvfile:
-            data = csv.reader(csvfile,delimiter=',')
-            rows = list(data)
-            total = len(rows)
-            self.StatusFrame.size.SetLabel(str(total))
-            print str(total)
-
-        with open(pth,'rb') as csvfile:
-            data = csv.reader(csvfile,delimiter=',')
-            columns = data.next()
-
-            ### why does getting the total rows below cause data to become empty?
-            ### is it iterating through and 'using up' the csv?
-            # rows = list(data)
-            # total = len(rows)
-            # self.StatusFrame.size.SetLabel(str(total))
-            # print str(total)
-
-            entries = []
-            i = 0
-
-            for entry in data:
-                row = self.Entry()
-                for pos in range(len(columns)):
-                    setattr(row,columns[pos],entry[pos])
-                # logging.error('appending row')
-                entries.append(row)
-                i += 1
-                self.StatusFrame.current.SetLabel(str(i))
-                if len(entries) == 10000:
-                    logging.error('loading SQL with 10000 entries')
-                    # print vars(entries[0])
-                    self.LoadSQL(entries,table)
-                    entries = []
-            logging.error('loading SQL with the remaining ' + str(len(entries)) + ' entries.')
-            self.LoadSQL(entries,table)
-            print columns
-            print data
-            print i
-            # print "done adding " + total + " entries"
-
-    def LoadSQL(self,entries,table):
-        #try:
-        #    con = _mysql.connect('sjc-dbdl-mysql3','iotssg','iotssg',port=3306)
-        #    c = con.cursor()
-        #    error.logging(c.execute("SELECT VERSION()"))
-        #    #data = cursor.fetchone()
-        #    #logging.error(data)
-        #    con.close()
-        #except Exception as e:
-        #    logging.error("error!!! " + str(e))
+# Form implementation generated from reading ui file 'Report-Center.ui'
 #
-        ##clean table
-        #cmd = "DELETE * FROM " + table
-        #con.executescript(cmd)
+# Created: Wed Feb 11 11:27:27 2015
+#      by: PyQt4 UI code generator 4.11.3
+#
+# WARNING! All changes made in this file will be lost!
 
-        #add entries to table
-        cmd = "INSERT INTO " + table + "("
-        sample = entries[0]
-        attributes = [a for a in dir(sample) if not a.startswith('__') and not callable(getattr(sample,a))]
+from PyQt4 import QtCore, QtGui
+import sys
 
-        #extract individual attributes to put in sql statement
-        for col in attributes:
-            cmd += col
-            if col != attributes[-1]:
-                cmd += ","
-        cmd += ") VALUES "
+try:
+    _fromUtf8 = QtCore.QString.fromUtf8
+except AttributeError:
+    def _fromUtf8(s):
+        return s
 
-        #create SQL row statement for each object
-        for entry in entries:
-            cmd += "("
-            for col in attributes:
-                cmd += str(getattr(entry,str(col)))
-                if col != attributes[-1]:
-                    cmd += ","
-                else:
-                    cmd += ")"
-                    if entry != entries[-1]:
-                        cmd += ','
+try:
+    _encoding = QtGui.QApplication.UnicodeUTF8
+    def _translate(context, text, disambig):
+        return QtGui.QApplication.translate(context, text, disambig, _encoding)
+except AttributeError:
+    def _translate(context, text, disambig):
+        return QtGui.QApplication.translate(context, text, disambig)
 
-        #logging.error("YOUR SQL COMMAND: ")
-        #logging.error(cmd)
+class Ui_MainWindow(QtGui.QMainWindow):
+    def __init__(self):
+        QtGui.QWidget.__init__(self)
+        self.setupUi(self)
 
-        #execute SQL cmd and close connection
-        #con.execute(cmd)
-        #con.close()
+    def setupUi(self, MainWindow):
+        MainWindow.setObjectName(_fromUtf8("MainWindow"))
+        MainWindow.resize(552, 548)
+        self.centralwidget = QtGui.QWidget(MainWindow)
+        self.centralwidget.setObjectName(_fromUtf8("centralwidget"))
+        self.verticalLayout = QtGui.QVBoxLayout(self.centralwidget)
+        self.verticalLayout.setObjectName(_fromUtf8("verticalLayout"))
+        self.Main_Tab = QtGui.QTabWidget(self.centralwidget)
+        self.Main_Tab.setObjectName(_fromUtf8("Main_Tab"))
+        self.Reports = QtGui.QWidget()
+        self.Reports.setObjectName(_fromUtf8("Reports"))
+        self.horizontalLayout = QtGui.QHBoxLayout(self.Reports)
+        self.horizontalLayout.setObjectName(_fromUtf8("horizontalLayout"))
+        self.Reports_TabWidget = QtGui.QTabWidget(self.Reports)
+        self.Reports_TabWidget.setEnabled(True)
+        self.Reports_TabWidget.setObjectName(_fromUtf8("Reports_TabWidget"))
+        self.Clarity = QtGui.QWidget()
+        self.Clarity.setObjectName(_fromUtf8("Clarity"))
+        self.verticalLayout_2 = QtGui.QVBoxLayout(self.Clarity)
+        self.verticalLayout_2.setObjectName(_fromUtf8("verticalLayout_2"))
+        self.Reports_Clarity_HBox_Top = QtGui.QHBoxLayout()
+        self.Reports_Clarity_HBox_Top.setObjectName(_fromUtf8("Reports_Clarity_HBox_Top"))
+        spacerItem = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Reports_Clarity_HBox_Top.addItem(spacerItem)
+        self.Reports_Clarity_Btn_Excel = QtGui.QPushButton(self.Clarity)
+        self.Reports_Clarity_Btn_Excel.setObjectName(_fromUtf8("Reports_Clarity_Btn_Excel"))
+        self.Reports_Clarity_HBox_Top.addWidget(self.Reports_Clarity_Btn_Excel)
+        self.Reports_Clarity_Btn_Tableau = QtGui.QPushButton(self.Clarity)
+        self.Reports_Clarity_Btn_Tableau.setObjectName(_fromUtf8("Reports_Clarity_Btn_Tableau"))
+        self.Reports_Clarity_HBox_Top.addWidget(self.Reports_Clarity_Btn_Tableau)
+        spacerItem1 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Reports_Clarity_HBox_Top.addItem(spacerItem1)
+        self.verticalLayout_2.addLayout(self.Reports_Clarity_HBox_Top)
+        self.Reports_Clarity_Scroll = QtGui.QScrollArea(self.Clarity)
+        self.Reports_Clarity_Scroll.setWidgetResizable(True)
+        self.Reports_Clarity_Scroll.setObjectName(_fromUtf8("Reports_Clarity_Scroll"))
+        self.scrollAreaWidgetContents = QtGui.QWidget()
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 474, 308))
+        self.scrollAreaWidgetContents.setObjectName(_fromUtf8("scrollAreaWidgetContents"))
+        self.horizontalLayout_3 = QtGui.QHBoxLayout(self.scrollAreaWidgetContents)
+        self.horizontalLayout_3.setObjectName(_fromUtf8("horizontalLayout_3"))
+        self.Reports_Clarity_Text = QtGui.QPlainTextEdit(self.scrollAreaWidgetContents)
+        self.Reports_Clarity_Text.setReadOnly(True)
+        self.Reports_Clarity_Text.setObjectName(_fromUtf8("Reports_Clarity_Text"))
+        self.horizontalLayout_3.addWidget(self.Reports_Clarity_Text)
+        self.Reports_Clarity_Scroll.setWidget(self.scrollAreaWidgetContents)
+        self.verticalLayout_2.addWidget(self.Reports_Clarity_Scroll)
+        self.Reports_Clarity_HBox_Bottom = QtGui.QHBoxLayout()
+        self.Reports_Clarity_HBox_Bottom.setObjectName(_fromUtf8("Reports_Clarity_HBox_Bottom"))
+        self.Reports_Clarity_Btn_Refresh = QtGui.QPushButton(self.Clarity)
+        self.Reports_Clarity_Btn_Refresh.setObjectName(_fromUtf8("Reports_Clarity_Btn_Refresh"))
+        self.Reports_Clarity_HBox_Bottom.addWidget(self.Reports_Clarity_Btn_Refresh)
+        self.Reports_Clarity_ProgressBar = QtGui.QProgressBar(self.Clarity)
+        self.Reports_Clarity_ProgressBar.setProperty("value", 0)
+        self.Reports_Clarity_ProgressBar.setObjectName(_fromUtf8("Reports_Clarity_ProgressBar"))
+        self.Reports_Clarity_HBox_Bottom.addWidget(self.Reports_Clarity_ProgressBar)
+        self.verticalLayout_2.addLayout(self.Reports_Clarity_HBox_Bottom)
+        self.Reports_TabWidget.addTab(self.Clarity, _fromUtf8(""))
+        self.Bookings = QtGui.QWidget()
+        self.Bookings.setObjectName(_fromUtf8("Bookings"))
+        self.verticalLayout_4 = QtGui.QVBoxLayout(self.Bookings)
+        self.verticalLayout_4.setObjectName(_fromUtf8("verticalLayout_4"))
+        self.Reports_Bookings_HBox_Top = QtGui.QHBoxLayout()
+        self.Reports_Bookings_HBox_Top.setObjectName(_fromUtf8("Reports_Bookings_HBox_Top"))
+        spacerItem2 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Reports_Bookings_HBox_Top.addItem(spacerItem2)
+        self.Reports_Bookings_Btn_Excel = QtGui.QPushButton(self.Bookings)
+        self.Reports_Bookings_Btn_Excel.setObjectName(_fromUtf8("Reports_Bookings_Btn_Excel"))
+        self.Reports_Bookings_HBox_Top.addWidget(self.Reports_Bookings_Btn_Excel)
+        self.Reports_Bookings_Btn_Tableau = QtGui.QPushButton(self.Bookings)
+        self.Reports_Bookings_Btn_Tableau.setObjectName(_fromUtf8("Reports_Bookings_Btn_Tableau"))
+        self.Reports_Bookings_HBox_Top.addWidget(self.Reports_Bookings_Btn_Tableau)
+        spacerItem3 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Reports_Bookings_HBox_Top.addItem(spacerItem3)
+        self.verticalLayout_4.addLayout(self.Reports_Bookings_HBox_Top)
+        self.Reports_Bookings_Scroll = QtGui.QScrollArea(self.Bookings)
+        self.Reports_Bookings_Scroll.setWidgetResizable(True)
+        self.Reports_Bookings_Scroll.setObjectName(_fromUtf8("Reports_Bookings_Scroll"))
+        self.scrollAreaWidgetContents_2 = QtGui.QWidget()
+        self.scrollAreaWidgetContents_2.setGeometry(QtCore.QRect(0, 0, 474, 308))
+        self.scrollAreaWidgetContents_2.setObjectName(_fromUtf8("scrollAreaWidgetContents_2"))
+        self.horizontalLayout_4 = QtGui.QHBoxLayout(self.scrollAreaWidgetContents_2)
+        self.horizontalLayout_4.setObjectName(_fromUtf8("horizontalLayout_4"))
+        self.Reports_Bookings_Text = QtGui.QPlainTextEdit(self.scrollAreaWidgetContents_2)
+        self.Reports_Bookings_Text.setObjectName(_fromUtf8("Reports_Bookings_Text"))
+        self.horizontalLayout_4.addWidget(self.Reports_Bookings_Text)
+        self.Reports_Bookings_Scroll.setWidget(self.scrollAreaWidgetContents_2)
+        self.verticalLayout_4.addWidget(self.Reports_Bookings_Scroll)
+        self.Reports_Bookings_HBox_Bottom = QtGui.QHBoxLayout()
+        self.Reports_Bookings_HBox_Bottom.setObjectName(_fromUtf8("Reports_Bookings_HBox_Bottom"))
+        self.Reports_Bookings_Btn_Refresh = QtGui.QPushButton(self.Bookings)
+        self.Reports_Bookings_Btn_Refresh.setObjectName(_fromUtf8("Reports_Bookings_Btn_Refresh"))
+        self.Reports_Bookings_HBox_Bottom.addWidget(self.Reports_Bookings_Btn_Refresh)
+        self.Reports_Bookings_ProgressBar = QtGui.QProgressBar(self.Bookings)
+        self.Reports_Bookings_ProgressBar.setProperty("value", 24)
+        self.Reports_Bookings_ProgressBar.setObjectName(_fromUtf8("Reports_Bookings_ProgressBar"))
+        self.Reports_Bookings_HBox_Bottom.addWidget(self.Reports_Bookings_ProgressBar)
+        self.verticalLayout_4.addLayout(self.Reports_Bookings_HBox_Bottom)
+        self.Reports_TabWidget.addTab(self.Bookings, _fromUtf8(""))
+        self.HeadCount = QtGui.QWidget()
+        self.HeadCount.setObjectName(_fromUtf8("HeadCount"))
+        self.Reports_TabWidget.addTab(self.HeadCount, _fromUtf8(""))
+        self.Bugs = QtGui.QWidget()
+        self.Bugs.setObjectName(_fromUtf8("Bugs"))
+        self.Reports_TabWidget.addTab(self.Bugs, _fromUtf8(""))
+        self.Budget = QtGui.QWidget()
+        self.Budget.setObjectName(_fromUtf8("Budget"))
+        self.Reports_TabWidget.addTab(self.Budget, _fromUtf8(""))
+        self.horizontalLayout.addWidget(self.Reports_TabWidget)
+        self.Main_Tab.addTab(self.Reports, _fromUtf8(""))
+        self.Mappings = QtGui.QWidget()
+        self.Mappings.setObjectName(_fromUtf8("Mappings"))
+        self.horizontalLayout_5 = QtGui.QHBoxLayout(self.Mappings)
+        self.horizontalLayout_5.setObjectName(_fromUtf8("horizontalLayout_5"))
+        self.Mappings_TabWidget = QtGui.QTabWidget(self.Mappings)
+        self.Mappings_TabWidget.setObjectName(_fromUtf8("Mappings_TabWidget"))
+        self.tab_8 = QtGui.QWidget()
+        self.tab_8.setObjectName(_fromUtf8("tab_8"))
+        self.verticalLayout_3 = QtGui.QVBoxLayout(self.tab_8)
+        self.verticalLayout_3.setObjectName(_fromUtf8("verticalLayout_3"))
+        self.Mappings_Dept_HBox_Top = QtGui.QHBoxLayout()
+        self.Mappings_Dept_HBox_Top.setObjectName(_fromUtf8("Mappings_Dept_HBox_Top"))
+        spacerItem4 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Mappings_Dept_HBox_Top.addItem(spacerItem4)
+        self.Mappings_Dept_Btn_New = QtGui.QPushButton(self.tab_8)
+        self.Mappings_Dept_Btn_New.setObjectName(_fromUtf8("Mappings_Dept_Btn_New"))
+        self.Mappings_Dept_HBox_Top.addWidget(self.Mappings_Dept_Btn_New)
+        spacerItem5 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Mappings_Dept_HBox_Top.addItem(spacerItem5)
+        self.verticalLayout_3.addLayout(self.Mappings_Dept_HBox_Top)
+        self.scrollArea_2 = QtGui.QScrollArea(self.tab_8)
+        self.scrollArea_2.setWidgetResizable(True)
+        self.scrollArea_2.setObjectName(_fromUtf8("scrollArea_2"))
+        self.scrollAreaWidgetContents_4 = QtGui.QWidget()
+        self.scrollAreaWidgetContents_4.setGeometry(QtCore.QRect(0, 0, 474, 308))
+        self.scrollAreaWidgetContents_4.setObjectName(_fromUtf8("scrollAreaWidgetContents_4"))
+        self.horizontalLayout_2 = QtGui.QHBoxLayout(self.scrollAreaWidgetContents_4)
+        self.horizontalLayout_2.setObjectName(_fromUtf8("horizontalLayout_2"))
+        self.tableWidget = QtGui.QTableWidget(self.scrollAreaWidgetContents_4)
+        self.tableWidget.setObjectName(_fromUtf8("tableWidget"))
+        self.tableWidget.setColumnCount(0)
+        self.tableWidget.setRowCount(0)
+        self.horizontalLayout_2.addWidget(self.tableWidget)
+        self.scrollArea_2.setWidget(self.scrollAreaWidgetContents_4)
+        self.verticalLayout_3.addWidget(self.scrollArea_2)
+        self.Mappings_Dept_HBox_Bottom = QtGui.QHBoxLayout()
+        self.Mappings_Dept_HBox_Bottom.setObjectName(_fromUtf8("Mappings_Dept_HBox_Bottom"))
+        spacerItem6 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Mappings_Dept_HBox_Bottom.addItem(spacerItem6)
+        self.Mappings_Dept_Btn_Save = QtGui.QPushButton(self.tab_8)
+        self.Mappings_Dept_Btn_Save.setObjectName(_fromUtf8("Mappings_Dept_Btn_Save"))
+        self.Mappings_Dept_HBox_Bottom.addWidget(self.Mappings_Dept_Btn_Save)
+        self.verticalLayout_3.addLayout(self.Mappings_Dept_HBox_Bottom)
+        self.Mappings_TabWidget.addTab(self.tab_8, _fromUtf8(""))
+        self.tab_9 = QtGui.QWidget()
+        self.tab_9.setObjectName(_fromUtf8("tab_9"))
+        self.verticalLayout_5 = QtGui.QVBoxLayout(self.tab_9)
+        self.verticalLayout_5.setObjectName(_fromUtf8("verticalLayout_5"))
+        self.Mappings_Project_HBox_Top = QtGui.QHBoxLayout()
+        self.Mappings_Project_HBox_Top.setObjectName(_fromUtf8("Mappings_Project_HBox_Top"))
+        spacerItem7 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Mappings_Project_HBox_Top.addItem(spacerItem7)
+        self.Mappings_Project_Btn_New = QtGui.QPushButton(self.tab_9)
+        self.Mappings_Project_Btn_New.setObjectName(_fromUtf8("Mappings_Project_Btn_New"))
+        self.Mappings_Project_HBox_Top.addWidget(self.Mappings_Project_Btn_New)
+        spacerItem8 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Mappings_Project_HBox_Top.addItem(spacerItem8)
+        self.verticalLayout_5.addLayout(self.Mappings_Project_HBox_Top)
+        self.scrollArea = QtGui.QScrollArea(self.tab_9)
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setObjectName(_fromUtf8("scrollArea"))
+        self.scrollAreaWidgetContents_3 = QtGui.QWidget()
+        self.scrollAreaWidgetContents_3.setGeometry(QtCore.QRect(0, 0, 474, 308))
+        self.scrollAreaWidgetContents_3.setObjectName(_fromUtf8("scrollAreaWidgetContents_3"))
+        self.horizontalLayout_7 = QtGui.QHBoxLayout(self.scrollAreaWidgetContents_3)
+        self.horizontalLayout_7.setObjectName(_fromUtf8("horizontalLayout_7"))
+        self.Mappings_Project_Table = QtGui.QPlainTextEdit(self.scrollAreaWidgetContents_3)
+        self.Mappings_Project_Table.setObjectName(_fromUtf8("Mappings_Project_Table"))
+        self.horizontalLayout_7.addWidget(self.Mappings_Project_Table)
+        self.scrollArea.setWidget(self.scrollAreaWidgetContents_3)
+        self.verticalLayout_5.addWidget(self.scrollArea)
+        self.Mappings_Project_HBox_Bottom = QtGui.QHBoxLayout()
+        self.Mappings_Project_HBox_Bottom.setObjectName(_fromUtf8("Mappings_Project_HBox_Bottom"))
+        spacerItem9 = QtGui.QSpacerItem(40, 20, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.Mappings_Project_HBox_Bottom.addItem(spacerItem9)
+        self.Mappings_Project_Btn_Save = QtGui.QPushButton(self.tab_9)
+        self.Mappings_Project_Btn_Save.setObjectName(_fromUtf8("Mappings_Project_Btn_Save"))
+        self.Mappings_Project_HBox_Bottom.addWidget(self.Mappings_Project_Btn_Save)
+        self.verticalLayout_5.addLayout(self.Mappings_Project_HBox_Bottom)
+        self.Mappings_TabWidget.addTab(self.tab_9, _fromUtf8(""))
+        self.horizontalLayout_5.addWidget(self.Mappings_TabWidget)
+        self.Main_Tab.addTab(self.Mappings, _fromUtf8(""))
+        self.verticalLayout.addWidget(self.Main_Tab)
+        MainWindow.setCentralWidget(self.centralwidget)
+        self.menubar = QtGui.QMenuBar(MainWindow)
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 552, 22))
+        self.menubar.setObjectName(_fromUtf8("menubar"))
+        self.menuFile = QtGui.QMenu(self.menubar)
+        self.menuFile.setObjectName(_fromUtf8("menuFile"))
+        self.menuAbout = QtGui.QMenu(self.menubar)
+        self.menuAbout.setObjectName(_fromUtf8("menuAbout"))
+        MainWindow.setMenuBar(self.menubar)
+        self.statusbar = QtGui.QStatusBar(MainWindow)
+        self.statusbar.setObjectName(_fromUtf8("statusbar"))
+        MainWindow.setStatusBar(self.statusbar)
+        self.actionSettings = QtGui.QAction(MainWindow)
+        self.actionSettings.setObjectName(_fromUtf8("actionSettings"))
+        self.actionExit = QtGui.QAction(MainWindow)
+        self.actionExit.setObjectName(_fromUtf8("actionExit"))
+        self.actionAbout_Report_Center = QtGui.QAction(MainWindow)
+        self.actionAbout_Report_Center.setObjectName(_fromUtf8("actionAbout_Report_Center"))
+        self.actionInput = QtGui.QAction(MainWindow)
+        self.actionInput.setObjectName(_fromUtf8("actionInput"))
+        self.menuFile.addAction(self.actionSettings)
+        self.menuFile.addSeparator()
+        self.menuFile.addAction(self.actionExit)
+        self.menuFile.addAction(self.actionInput)
+        self.menuAbout.addAction(self.actionAbout_Report_Center)
+        self.menubar.addAction(self.menuFile.menuAction())
+        self.menubar.addAction(self.menuAbout.menuAction())
 
-    def OnExit(self, event):
-        self.Destroy()
+        self.retranslateUi(MainWindow)
+        self.Main_Tab.setCurrentIndex(0)
+        self.Reports_TabWidget.setCurrentIndex(4)
+        self.Mappings_TabWidget.setCurrentIndex(1)
+        QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-    def OnOptions(self, event):
-        pass
+    def retranslateUi(self, MainWindow):
+        MainWindow.setWindowTitle(_translate("MainWindow", "IoTSSG Report Center", None))
+        self.Reports_Clarity_Btn_Excel.setText(_translate("MainWindow", "Excel Report", None))
+        self.Reports_Clarity_Btn_Tableau.setText(_translate("MainWindow", "Tableau", None))
+        self.Reports_Clarity_Btn_Refresh.setText(_translate("MainWindow", "Refresh Data", None))
+        self.Reports_TabWidget.setTabText(self.Reports_TabWidget.indexOf(self.Clarity), _translate("MainWindow", "Clarity", None))
+        self.Reports_Bookings_Btn_Excel.setText(_translate("MainWindow", "Excel Report", None))
+        self.Reports_Bookings_Btn_Tableau.setText(_translate("MainWindow", "Tableau", None))
+        self.Reports_Bookings_Btn_Refresh.setText(_translate("MainWindow", "Refresh Data", None))
+        self.Reports_TabWidget.setTabText(self.Reports_TabWidget.indexOf(self.Bookings), _translate("MainWindow", "Bookings", None))
+        self.Reports_TabWidget.setTabText(self.Reports_TabWidget.indexOf(self.HeadCount), _translate("MainWindow", "HeadCount", None))
+        self.Reports_TabWidget.setTabText(self.Reports_TabWidget.indexOf(self.Bugs), _translate("MainWindow", "Bugs", None))
+        self.Reports_TabWidget.setTabText(self.Reports_TabWidget.indexOf(self.Budget), _translate("MainWindow", "Budget", None))
+        self.Main_Tab.setTabText(self.Main_Tab.indexOf(self.Reports), _translate("MainWindow", "Reports", None))
+        self.Mappings_Dept_Btn_New.setText(_translate("MainWindow", "New Item", None))
+        self.Mappings_Dept_Btn_Save.setText(_translate("MainWindow", "Save", None))
+        self.Mappings_TabWidget.setTabText(self.Mappings_TabWidget.indexOf(self.tab_8), _translate("MainWindow", "Department", None))
+        self.Mappings_Project_Btn_New.setText(_translate("MainWindow", "New Item", None))
+        self.Mappings_Project_Btn_Save.setText(_translate("MainWindow", "Save", None))
+        self.Mappings_TabWidget.setTabText(self.Mappings_TabWidget.indexOf(self.tab_9), _translate("MainWindow", "Project", None))
+        self.Main_Tab.setTabText(self.Main_Tab.indexOf(self.Mappings), _translate("MainWindow", "Mappings", None))
+        self.menuFile.setTitle(_translate("MainWindow", "File", None))
+        self.menuAbout.setTitle(_translate("MainWindow", "About", None))
+        self.actionSettings.setText(_translate("MainWindow", "Settings", None))
+        self.actionExit.setText(_translate("MainWindow", "Exit", None))
+        self.actionAbout_Report_Center.setText(_translate("MainWindow", "About Report-Center", None))
+        self.actionInput.setText(_translate("MainWindow", "Input", None))
 
-    class Entry(object):
-        pass
-
-logging.error(__name__)
 if __name__ == '__main__':
-    logging.error("welcome to Report Center")
-    app = wx.App()
-    app.main = Frame("Report Center")
-    app.main.Show()
-    app.MainLoop()
+    app = QtGui.QApplication(sys.argv)
+    client = Ui_MainWindow()
+    client.show()
+    sys.exit(app.exec_())
