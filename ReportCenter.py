@@ -14,6 +14,7 @@ import urllib2
 import csv
 import xml.etree.ElementTree as ET
 from datetime import datetime
+import pymysql
 
 
 try:
@@ -38,7 +39,13 @@ class Ui_MainWindow(QtGui.QMainWindow):
         ## Instantiate variables ##
         self.settings = None
         self.conn = None
-        self.serverParams = None
+        ## Server params should be pickled
+        # self.serverParams = None
+        self.serverParams = {'host':'sjc-dbdl-mysql3',
+                        'port':3306,
+                        'user':'iotssg',
+                        'passwd':'iotssg',
+                        'db':'iotssg'}
         self.cur = None
         self.orgChartURL = 'https://labtools.cisco.com/general/orgchart.php?tops=kip&format=csv'
         self.clarityUrl = 'http://ppm-prod-int:8888/ppmws/api/resources/resourceById/'
@@ -52,7 +59,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
         ## Establish connection to Database ##
         self.setConnection()
         ## 
-        self.retrieveTableData()
+        self.tableFactory()
 
     def setupUi(self, MainWindow):
     	"""
@@ -315,12 +322,22 @@ class Ui_MainWindow(QtGui.QMainWindow):
         self.actionInput.setText(_translate("MainWindow", "Input", None))
 
     def bindEvents(self):
-    	'''
-    	After table data loads, Binds buttons and other inputs to functions
-    	'''
-    	self.Reports_Clarity_Btn_Refresh.clicked.connect(self.refreshClarity)
-    	self.Reports_Clarity_Btn_Excel.clicked.connect(self.excelClarityDownload)
-    	self.Reports_Clarity_Btn_Tableau.clicked.connect(self.redirectClarityTableau)
+        '''
+        After table data loads, Binds buttons and other inputs to functions
+        '''
+        ## Clarity Buttons
+        self.Reports_Clarity_Btn_Refresh.clicked.connect(self.refreshClarity)
+        self.connect(self.Reports_Clarity_Btn_Excel, QtCore.SIGNAL("clicked()"),
+            lambda report="Clarity":self.excelDownload(report))
+        self.connect(self.Reports_Clarity_Btn_Tableau, QtCore.SIGNAL("clicked()"),
+            lambda report="Clarity":self.redirectTableau(report))
+
+        ## Bookings Buttons
+        self.Reports_Bookings_Btn_Refresh.clicked.connect(self.refreshBookings)
+        self.connect(self.Reports_Bookings_Btn_Excel, QtCore.SIGNAL("clicked()"),
+            lambda report="Bookings":self.excelDownload(report))
+        self.connect(self.Reports_Bookings_Btn_Tableau, QtCore.SIGNAL("clicked()"),
+            lambda report="Bookings":self.redirectTableau(report))
 
     def setConnection(self):
         '''
@@ -335,7 +352,11 @@ class Ui_MainWindow(QtGui.QMainWindow):
                 db=self.serverParams['db'])
             self.cur = self.conn.cursor()
             self.cur.execute("SELECT VERSION()")
-            print "Successfully logged into MySQL server, running version: " + self.cur.fetchone()[0]
+            self.cur.execute("SHOW TABLES FROM iotssg")
+            # print "Successfully logged into MySQL server, running version: " + self.cur.fetchone()[0]
+            for table in self.cur.fetchall():
+                if table[0][-4:] =="_map":
+                    print table[0]
         except Exception as e:
             print "trouble connecting to server: " + str(e)
             ## Close cursor and connection
@@ -366,10 +387,63 @@ class Ui_MainWindow(QtGui.QMainWindow):
         if not self.conn:
             print "Connection not established."
             return
+        if not self.cur:
+            self.cur = self.conn.cursor(pymysql.cursors.DictCursor)
+
+        tables = []
+
+        self.cur.execute("SHOW TABLES FROM iotssg")
+        for table in self.cur.fetchall():
+            if table[0][-4:] =="_map":
+                tables.append(table[0])
+        ## Build columns for all tables
+        cols = []
+        self.cur.execute("""select *
+           from information_schema.columns
+           where table_schema NOT IN ('information_schema', 'pg_catalog')
+           and TABLE_NAME IN (SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_TYPE = "BASE TABLE")
+           order by table_schema, table_name""")
+
+        print "{0} columns: ".format(table)
+        for row in self.cur.fetchall():
+            print row[2], row[3], row [14]
+        # for col in self.cur.description:
+            # cols.append((col[0],col[1]))
+        # print cols
+        # print self.cur.fetchone().description
+        print "sample data in retrieve table data: "
+        # print self.cur.fetchall()[0]
+        # self.tableFactory()
         return
 
-    	
-    def refreshHC(self):
+    def tableFactory(self):
+        '''
+        Query MySQL db for data and injects into tablewidgets.
+        Tables are set in stone here: Project/Dept/Product Groups
+        '''
+        tables = ["Project_map","Department_map","Product_Groups_map"]
+        for table in tables:
+            self.cur.execute("""select *
+            from information_schema.columns
+            where TABLE_NAME = {0}
+            order by table_schema, table_name""".format(table))
+            cols = []
+            for row in self.cur.fetchall():
+                cols.append((row[3],row[7]))
+            print cols
+
+        ## Set target table to inject
+        # print target
+        ## extract column names
+        # print "Columns to inject: "
+        # for column in columns:
+            # print column
+        ## after setting columns, inject data
+        # print "sample data in table factory: "
+        # print data[0]
+        return
+
+    def refreshHC(self):## Transfer to Server side
         '''
         Refreshes Employee data. Grabs from CEC Directory
         '''
@@ -478,7 +552,7 @@ class Ui_MainWindow(QtGui.QMainWindow):
             sys.stdout.write(str(count) + " Employees added to Database\r")
             sys.stdout.flush()
 
-    def refreshClarity(self):
+    def refreshClarity(self):## Transfer to server side
     	'''
     	Updates Employee Table with CEC org chart data
     	Retrieves Clarity information and Loads into MySQL server
@@ -486,18 +560,97 @@ class Ui_MainWindow(QtGui.QMainWindow):
         print "Refreshing Clarity Data"
     	return
 
-    def excelClarityDownload(self):
-    	'''attempts to access Strategic Planning IWE site
-    	 to download an Excel Report.
-    	 TODO: get Auth information to preauth user?
+    def refreshBookings(self):## transfer to server side
+        pass
+
+    def refreshProjects(self):
+        self.cur.execute("DELETE FROM Projects;")
+        # Get unique project ID's from Allocations
+        
+        count = 0
+        for username in self.usernames:
+            count += 1
+            ## data var will contain SQL rows to insert into table ##
+            data = []
+            ## for each username, build connection to clarity web services url ##
+            url = self.Clarity_url + username
+            p = urllib2.HTTPPasswordMgrWithDefaultRealm()
+            p.add_password(None, url, self.user, self.password)
+            handler = urllib2.HTTPBasicAuthHandler(p)
+            opener = urllib2.build_opener(handler)
+            urllib2.install_opener(opener)
+
+            ## create xml data and establish parent tree ##
+            xmldata = urllib2.urlopen(url)
+            tree = ET.parse(xmldata)
+            xmldata.close()
+        
+            root = tree.getroot()
+            FTE_count = 0.0
+            try:
+                for month in root[0].find('monthlySums'):
+                    if float(month.get('fte')) == 0:
+                        data.append((username,
+                                    datetime.strptime(month.get('start').split('T')[0],"%Y-%m-%d"),
+                                    "Unallocated",
+                                    "Unallocated",
+                                    0))
+                        self.running_count += 1
+                for project in root[0].find('allocations'):
+                    for month in project.find('monthlySegments'):
+                        if float(month.get('fte')) > 0:
+                            ## append a tuple as a row to use as insert statement ##
+                            data.append(
+                                (username,
+                                ## Month - DATETIME ##
+                                datetime.strptime(month.get('start').split('T')[0],"%Y-%m-%d"),
+                                ## Project Name - STRING##
+                                project.get('investmentName')[0:-9],
+                                ## Project ID - STRING##
+                                project.get('investmentId'),
+                                ## FTE amount - FLOAT##
+                                float(month.get('fte')))
+                            )
+                            self.running_count += 1
+
+            except Exception as e:
+                print "No projects found for " + username
+                data.append(
+                    (username, datetime.strftime(datetime.today(),"%Y-%m-01"),"Unallocated", "No Projects", 0))
+                self.running_count += 1
+            ## add rows to SQL Server ##
+            try:
+                self.cur.executemany("INSERT INTO Allocations VALUES (%s, %s, %s, %s, %s)",data)
+                self.conn.commit()
+                sys.stdout.write(str(count) + "/" +str(len(self.usernames)) + "\r" )
+                sys.stdout.flush()
+            except Exception as e:
+                print str(e)
+        ## After refreshing, get unique id's for project mapping, compare to current project map and add new ones
+        
+        return
+
+    def excelDownload(self,report):
     	'''
+        attempts to access Strategic Planning IWE site
+    	to download an Excel Report.
+    	TODO: get Auth information to preauth user?
+    	'''
+        if report == "Clarity":
+            print "Directing to clarity report download"
+        elif report == "Bookings":
+            print "Directing to Bookings report download"
     	return
 
-    def redirectClarityTableau(self):
+    def redirectTableau(self,report):
     	'''
     	Open Browser and direct to Tableau
     	TODO: Add cec authentication to streamline opening report?
     	'''
+        if report == "Clarity":
+            print "Directing to clarity talbeau report"
+        elif report == "Bookings":
+            print "Directing to Bookings tableau report"
     	return
 
 if __name__ == '__main__':
